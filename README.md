@@ -16,9 +16,7 @@ Replace `uart_tcp` and its connected sensor with:
 
 ```yaml
 external_components:
-  - source:
-      type: local
-      path: Components/znp_proxy/components
+  - source: github://inventor7777/ESPHome-ZNP-Proxy
     components: [znp_proxy]
 
 znp_proxy:
