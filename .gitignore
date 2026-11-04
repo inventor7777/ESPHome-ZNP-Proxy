@@ -1,0 +1,50 @@
+# macOS / SMB metadata
+.DS_Store
+._*
+.AppleDouble/
+.LSOverride
+.Spotlight-V100/
+.Trashes/
+.TemporaryItems/
+.fseventsd/
+
+# Python caches and environments
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+
+# ESPHome and C/C++ build artifacts
+.esphome/
+.pio/
+build/
+cmake-build-*/
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.elf
+*.bin
+*.dSYM/
+
+# Editor and temporary files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.tmp
+*.log
+
+# Local secrets
+secrets.yaml
+.env
+.env.*
+!.env.example
