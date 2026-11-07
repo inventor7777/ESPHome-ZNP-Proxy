@@ -133,25 +133,73 @@ int main() {
     Harness h;
     h.set_unresponsive_detection(true);
     h.connect();
-    for (uint32_t now : {0, 3000, 4000}) {
+    for (uint32_t now : {0, 1000}) {
       h.host(PING);
       h.step(now);
     }
-    h.step(4499);
+    h.step(1499);
     assert(h.link().connected());
-    h.step(4500);
+    h.step(1500);
     assert(!h.link().connected());
     assert(h.get_radio_unresponsive_trigger()->calls == 1);
     assert(h.queued() == 0);
     assert(!h.protocol().paused());
     h.connect();
-    for (uint32_t now : {5000, 6000, 7000}) {
+    for (uint32_t now : {5000, 6000}) {
       h.host(PING);
       h.step(now);
     }
-    h.step(8500);
+    h.step(6500);
     assert(h.link().connected());
     assert(h.get_radio_unresponsive_trigger()->calls == 1);
+  }
+  {
+    Harness h;
+    h.set_unresponsive_detection(true);
+    h.connect();
+    const Bytes version{0xFE, 0x00, 0x21, 0x02, 0x23};
+    h.host(version);
+    h.step(0);
+    h.step(5000);
+    h.host(PING);  // New host commands stay in TCP during private probing.
+    h.step(5016);
+    h.step(5100);
+    h.step(5600);
+    assert(h.link().input.size() == PING.size());
+    h.step(6100);
+    assert(!h.link().connected());
+    assert(h.get_radio_unresponsive_trigger()->calls == 1);
+    assert(h.link().received.empty());
+    Bytes expected = version;
+    expected.insert(expected.end(), 260, 0xEF);
+    expected.insert(expected.end(), PING.begin(), PING.end());
+    expected.insert(expected.end(), PING.begin(), PING.end());
+    assert(h.uart.written == expected);
+    h.connect();
+    h.host(version);
+    h.step(6200);
+    h.step(11200);
+    h.step(11216);
+    h.step(11300);
+    h.step(11800);
+    h.step(12300);
+    assert(!h.link().connected());
+    assert(h.get_radio_unresponsive_trigger()->calls == 1);  // Reset cooldown survives reconnects.
+  }
+  {
+    Harness h;
+    h.set_unresponsive_detection(true);
+    h.connect();
+    h.host({0xFE, 0x00, 0x21, 0x02, 0x23});
+    h.step(0);
+    h.step(5000);
+    h.step(5016);
+    h.step(5100);
+    h.radio(PONG);
+    h.step(5150);
+    assert(!h.link().connected());
+    assert(h.get_radio_unresponsive_trigger()->calls == 0);  // Responsive radio is not reset.
+    assert(h.link().received.empty());
   }
   std::puts("All ZNP transport checks passed");
 }

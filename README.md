@@ -267,10 +267,23 @@ buffered and are discarded on the next connection.
 
 ### Optional automatic radio reset
 
-After at least three unanswered HA pings over three seconds, with 500 ms allowed
-for the latest reply, this trigger closes TCP and runs your reset automation.
+After two unanswered host pings, with 500 ms allowed for the latest reply,
+this trigger closes TCP and runs your reset automation. There is no minimum span between pings.
 It fires at most once per minute, including across reconnects; idle radios do not
 trigger it. No reset occurs unless you configure the automation.
+
+The same hook also watches missing synchronous command responses during normal
+operation, even if the host sends no pings. AF/ZDO requests and selected SYS reads
+get five seconds; writes and unfamiliar commands get a minute. Startup/commissioning
+commands are excluded. Background reports and missing device delivery confirmations
+do not count as command responses or failures.
+
+An overdue command pauses host input, sends resync padding, then tries up to two
+private pings. If either answers, TCP closes so the host can reconnect, without a
+radio reset. If neither answers, the existing reset automation runs (subject to
+the same one-minute cooldown). A late matching response cancels the reset; when
+private probes are already in flight, TCP still closes to contain late replies.
+Ordinary commands are never replayed. A completely idle connection is not probed.
 
 ```yaml
 znp_proxy:

@@ -66,8 +66,18 @@ void ZnpProxy::event(Event event) {
       ESP_LOGE(TAG, "Recovery failed or response ownership is ambiguous; disconnecting");
       break;
     case Event::RADIO_UNRESPONSIVE:
-      ESP_LOGW(TAG, "Repeated host pings unanswered; disconnecting and running radio recovery automation");
+      ESP_LOGW(TAG, "Radio probes unanswered; disconnecting and running radio recovery automation");
       this->radio_reset_requested_ = true;
+      break;
+    case Event::COMMAND_TIMEOUT:
+      ESP_LOGW(TAG, "SRSP missing for command 0x%04X; checking radio without replaying command",
+               this->protocol_.pending_command());
+      break;
+    case Event::COMMAND_RESPONSIVE:
+      ESP_LOGW(TAG, "Radio answered private probe; reconnecting without a reset or command replay");
+      break;
+    case Event::COMMAND_PROBE_RETRY:
+      ESP_LOGW(TAG, "Private probe unanswered; trying second probe before radio recovery");
       break;
   }
 }

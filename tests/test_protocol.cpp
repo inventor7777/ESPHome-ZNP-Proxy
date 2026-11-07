@@ -301,25 +301,22 @@ int main() {
     Harness h;
     h.protocol.set_unresponsive_detection(true);
     h.tx(PING, 0);
-    h.tx(PING, 3000);
-    h.tx(PING, 4000);
-    h.protocol.tick(4499);
+    h.tx(PING, 1000);
+    h.protocol.tick(1499);
     assert(h.events.empty());
-    h.protocol.tick(4500);
+    h.protocol.tick(1500);
     assert(h.events == std::vector<Event>({Event::RADIO_UNRESPONSIVE}));
     h.protocol.reset();  // Reconnecting must not erase the reset cooldown.
-    h.tx(PING, 5000);
-    h.tx(PING, 6000);
-    h.tx(PING, 7000);
-    h.protocol.tick(8500);
+    h.tx(PING, 2000);
+    h.tx(PING, 3000);
+    h.protocol.tick(3500);
     assert(h.events.size() == 1);
     h.protocol.reset();
     h.tx(PING, 60000);
     h.tx(PING, 61000);
-    h.tx(PING, 62000);
-    h.protocol.tick(64499);
+    h.protocol.tick(61499);
     assert(h.events.size() == 1);
-    h.protocol.tick(64500);
+    h.protocol.tick(61500);
     assert(h.events.size() == 2);
   }
   {
@@ -333,27 +330,173 @@ int main() {
     assert(h.events.empty());
     assert(h.host.size() == 3);  // Host ping replies are never swallowed.
     h.tx(PING, 11000);
-    h.tx(PING, 12000);
     h.protocol.tick(20000);
-    assert(h.events.empty());  // Two unanswered probes are insufficient.
+    assert(h.events.empty());  // One unanswered probe is insufficient.
   }
   {
     Harness h;
     h.tx(PING, 0);
-    h.tx(PING, 3000);
-    h.tx(PING, 4000);
-    h.protocol.tick(4500);
+    h.tx(PING, 1000);
+    h.protocol.tick(1500);
     assert(h.events.empty());  // No automation means no automatic resets.
   }
   {
     Harness h;
     h.protocol.set_unresponsive_detection(true);
     h.tx(PING, 0);
-    h.tx(PING, 3000);
-    h.tx(PING, 4000);
-    h.rx(frame(0x41, 0x80, {1, 2, 3}), 4200);
-    h.protocol.tick(4500);
+    h.tx(PING, 1000);
+    h.rx(frame(0x41, 0x80, {1, 2, 3}), 1200);
+    h.protocol.tick(1500);
     assert(h.events.empty());  // A manual reset cancels the old failure streak.
+  }
+  {
+    Harness h;
+    h.protocol.set_unresponsive_detection(true);
+    auto command = frame(0x21, 0x02);  // SYS.Version is an ordinary, non-OTA request.
+    h.tx(command, 0);
+    h.rx(INCOMING, 4900);  // Sensor reports do not answer the pending SREQ.
+    h.protocol.tick(4999);
+    assert(h.uart.size() == 1);
+    h.protocol.tick(5000);
+    assert(h.protocol.paused());
+    assert(h.uart.back() == Bytes(260, 0xEF));
+    assert(h.events.back() == Event::COMMAND_TIMEOUT);
+    h.protocol.tick(5100);
+    assert(h.uart.back() == PING);
+    h.rx(PONG, 5150);
+    assert(h.protocol.failed());  // Let the host reconnect; do not repeat Version.
+    assert(h.events.back() == Event::COMMAND_RESPONSIVE);
+    assert(h.host == std::vector<Bytes>({INCOMING}));
+    assert(h.uart == std::vector<Bytes>({command, Bytes(260, 0xEF), PING}));
+  }
+  {
+    Harness h;
+    h.protocol.set_unresponsive_detection(true);
+    h.tx(frame(0x24, 0x01, {1, 2}), 0);
+    h.protocol.tick(5000);
+    h.protocol.tick(5100);
+    h.protocol.tick(5599);
+    assert(h.uart.size() == 3);
+    h.protocol.tick(5600);
+    assert(h.uart.back() == PING);
+    assert(h.events.back() == Event::COMMAND_PROBE_RETRY);
+    h.protocol.tick(6099);
+    assert(!h.protocol.failed());
+    h.protocol.tick(6100);
+    assert(h.protocol.failed());
+    assert(h.events.back() == Event::RADIO_UNRESPONSIVE);
+    assert(h.uart.size() == 4);  // Two probes, zero ordinary-command replays.
+  }
+  {
+    Harness h;
+    h.protocol.set_unresponsive_detection(true);
+    h.tx(frame(0x21, 0x02), 0);
+    h.protocol.tick(5000);
+    h.rx(frame(0x61, 0x02, Bytes(9, 0)), 5050);  // Late response before the probe.
+    h.protocol.tick(5100);
+    assert(!h.protocol.paused());
+    assert(h.uart.size() == 2);
+    assert(h.events.back() == Event::LATE_RESPONSE);
+  }
+  {
+    Harness h;
+    h.protocol.set_unresponsive_detection(true);
+    h.tx(frame(0x21, 0x02), 0);
+    h.protocol.tick(5000);
+    h.protocol.tick(5100);
+    h.protocol.tick(5600);  // A second private probe is now outstanding.
+    h.rx(frame(0x61, 0x02, Bytes(9, 0)), 5650);
+    h.protocol.tick(6100);
+    assert(h.protocol.failed());  // Cancel reset; close rather than leaking a late pong.
+    assert(std::find(h.events.begin(), h.events.end(), Event::RADIO_UNRESPONSIVE) == h.events.end());
+    assert(h.host.size() == 1);
+  }
+  {
+    Harness h;
+    h.protocol.set_unresponsive_detection(true);
+    h.tx(frame(0x21, 0x02), 0);
+    h.protocol.tick(5000);
+    h.protocol.tick(5100);
+    h.protocol.tick(5600);
+    h.rx(PONG, 5650);  // Either probe's answer proves the command path responds.
+    assert(h.events.back() == Event::COMMAND_RESPONSIVE);
+    assert(h.host.empty());
+  }
+  {
+    Harness h;
+    h.protocol.set_unresponsive_detection(true);
+    h.tx(frame(0x21, 0x02), 0);
+    h.rx(frame(0x60, 0x00, {1, 0x21, 0x02}), 100);  // RPC command error is a real reply.
+    h.protocol.tick(100000);
+    assert(h.events.empty());
+    assert(h.uart.size() == 1);
+    assert(h.host.size() == 1);
+  }
+  {
+    for (auto command : {frame(0x25, 0x40, {0, 0}), frame(0x2F, 0x05, {1}), frame(0x26, 0x00)}) {
+      Harness h;
+      h.protocol.set_unresponsive_detection(true);
+      h.tx(command, 0);
+      h.protocol.tick(120000);
+      assert(h.events.empty());  // Startup and commissioning are explicitly excluded.
+    }
+    for (auto command : {frame(0x21, 0x34, {1, 2}), frame(0x21, 0x30, {1, 2}), frame(0x28, 0x55)}) {
+      Harness h;
+      h.protocol.set_unresponsive_detection(true);
+      h.tx(command, 0);
+      h.protocol.tick(59999);
+      assert(h.events.empty());  // Writes and unknown commands get a minute.
+      h.protocol.tick(60000);
+      assert(h.events.back() == Event::COMMAND_TIMEOUT);
+    }
+  }
+  {
+    Harness h;
+    h.protocol.set_unresponsive_detection(true);
+    h.tx(frame(0x21, 0x02), 0);
+    h.rx(frame(0x61, 0x02, Bytes(9, 0)), 100);
+    h.protocol.tick(100000);
+    assert(h.events.empty());  // A quiet, healthy network never triggers probing.
+    h.tx(frame(0x21, 0x02), 101000);
+    h.tx(frame(0x21, 0x08, {1, 2}), 101001);
+    h.protocol.tick(200000);
+    assert(h.events.empty());  // Multiple pending SREQs cannot be safely attributed.
+  }
+  {
+    Harness h;
+    h.protocol.set_unresponsive_detection(true);
+    h.tx(frame(0x21, 0x02), 0);
+    h.protocol.tick(5000);
+    h.protocol.reset();
+    h.protocol.tick(100000);
+    assert(h.events.size() == 1);  // No probes survive a disconnect/reset boundary.
+  }
+  {
+    Harness h;
+    h.tx(frame(0x21, 0x02), 0);
+    h.protocol.tick(100000);
+    assert(h.events.empty());  // Remains opt-in through the existing reset automation.
+  }
+  {
+    Harness h;
+    h.protocol.set_unresponsive_detection(true);
+    h.tx(frame(0x21, 0x02), 0xFFFFFF00);
+    h.protocol.tick(uint32_t(0xFFFFFF00 + 5000));
+    h.protocol.tick(uint32_t(0xFFFFFF00 + 5100));
+    h.protocol.tick(uint32_t(0xFFFFFF00 + 5600));
+    h.protocol.tick(uint32_t(0xFFFFFF00 + 6100));
+    assert(h.events.back() == Event::RADIO_UNRESPONSIVE);
+  }
+  {
+    Harness h;
+    h.protocol.set_unresponsive_detection(true);
+    h.tx(frame(0x21, 0x02), 0);
+    h.protocol.tick(5000);
+    h.protocol.tick(5100);
+    h.rx(frame(0x60, 0x00, {1, 0x21, 0x01}), 5150);
+    assert(h.events.back() == Event::COMMAND_RESPONSIVE);  // Even a probe error proves execution.
+    assert(h.host.empty());  // Its RPC error belongs to the private probe, not the host command.
+    assert(h.protocol.failed());
   }
   std::puts("All ZNP protocol checks passed");
   return 0;
