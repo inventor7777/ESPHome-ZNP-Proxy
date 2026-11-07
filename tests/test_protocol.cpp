@@ -297,6 +297,64 @@ int main() {
     }
     assert(received == 1);  // The recovery ping survives the padding boundary.
   }
+  {
+    Harness h;
+    h.protocol.set_unresponsive_detection(true);
+    h.tx(PING, 0);
+    h.tx(PING, 3000);
+    h.tx(PING, 4000);
+    h.protocol.tick(4499);
+    assert(h.events.empty());
+    h.protocol.tick(4500);
+    assert(h.events == std::vector<Event>({Event::RADIO_UNRESPONSIVE}));
+    h.protocol.reset();  // Reconnecting must not erase the reset cooldown.
+    h.tx(PING, 5000);
+    h.tx(PING, 6000);
+    h.tx(PING, 7000);
+    h.protocol.tick(8500);
+    assert(h.events.size() == 1);
+    h.protocol.reset();
+    h.tx(PING, 60000);
+    h.tx(PING, 61000);
+    h.tx(PING, 62000);
+    h.protocol.tick(64499);
+    assert(h.events.size() == 1);
+    h.protocol.tick(64500);
+    assert(h.events.size() == 2);
+  }
+  {
+    Harness h;
+    h.protocol.set_unresponsive_detection(true);
+    for (uint32_t now : {0, 3000, 4000}) {
+      h.tx(PING, now);
+      h.rx(PONG, now + 20);
+    }
+    h.protocol.tick(10000);
+    assert(h.events.empty());
+    assert(h.host.size() == 3);  // Host ping replies are never swallowed.
+    h.tx(PING, 11000);
+    h.tx(PING, 12000);
+    h.protocol.tick(20000);
+    assert(h.events.empty());  // Two unanswered probes are insufficient.
+  }
+  {
+    Harness h;
+    h.tx(PING, 0);
+    h.tx(PING, 3000);
+    h.tx(PING, 4000);
+    h.protocol.tick(4500);
+    assert(h.events.empty());  // No automation means no automatic resets.
+  }
+  {
+    Harness h;
+    h.protocol.set_unresponsive_detection(true);
+    h.tx(PING, 0);
+    h.tx(PING, 3000);
+    h.tx(PING, 4000);
+    h.rx(frame(0x41, 0x80, {1, 2, 3}), 4200);
+    h.protocol.tick(4500);
+    assert(h.events.empty());  // A manual reset cancels the old failure streak.
+  }
   std::puts("All ZNP protocol checks passed");
   return 0;
 }

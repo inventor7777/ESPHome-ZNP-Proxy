@@ -9,6 +9,11 @@
 #include <vector>
 
 namespace esphome {
+template<typename... Args> class Trigger {
+ public:
+  size_t calls{0};
+  void trigger(Args...) { this->calls++; }
+};
 namespace setup_priority {
 inline constexpr float AFTER_WIFI = 200;
 }

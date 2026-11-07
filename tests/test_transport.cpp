@@ -129,5 +129,29 @@ int main() {
     h.step(32, SIZE_MAX);
     assert(h.uart.written == Bytes(40, 0xEF));
   }
+  {
+    Harness h;
+    h.set_unresponsive_detection(true);
+    h.connect();
+    for (uint32_t now : {0, 3000, 4000}) {
+      h.host(PING);
+      h.step(now);
+    }
+    h.step(4499);
+    assert(h.link().connected());
+    h.step(4500);
+    assert(!h.link().connected());
+    assert(h.get_radio_unresponsive_trigger()->calls == 1);
+    assert(h.queued() == 0);
+    assert(!h.protocol().paused());
+    h.connect();
+    for (uint32_t now : {5000, 6000, 7000}) {
+      h.host(PING);
+      h.step(now);
+    }
+    h.step(8500);
+    assert(h.link().connected());
+    assert(h.get_radio_unresponsive_trigger()->calls == 1);
+  }
   std::puts("All ZNP transport checks passed");
 }

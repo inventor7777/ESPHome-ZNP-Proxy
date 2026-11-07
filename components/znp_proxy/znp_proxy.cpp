@@ -65,6 +65,10 @@ void ZnpProxy::event(Event event) {
     case Event::FAILED:
       ESP_LOGE(TAG, "Recovery failed or response ownership is ambiguous; disconnecting");
       break;
+    case Event::RADIO_UNRESPONSIVE:
+      ESP_LOGW(TAG, "Repeated host pings unanswered; disconnecting and running radio recovery automation");
+      this->radio_reset_requested_ = true;
+      break;
   }
 }
 
@@ -74,6 +78,7 @@ void ZnpProxy::sync_link_() {
   this->uart_tx_size_ = 0;
   this->socket_pending_ = false;
   this->transport_failed_ = false;
+  this->radio_reset_requested_ = false;
   if (this->link_was_up_) {
     // Discard only the snapshot buffered before this connection.
     size_t left = this->available();
@@ -122,7 +127,7 @@ void ZnpProxy::loop() {
   // Drain queued UART work before advancing timers or admitting more host data.
   if (this->uart_tx_size_ == 0 && this->link_.tx_free() >= 260) {
     this->protocol_.tick(now);
-    if (!this->protocol_.paused() && !this->transport_failed_ &&
+    if (!this->radio_reset_requested_ && !this->protocol_.paused() && !this->transport_failed_ &&
         (this->socket_pending_ || this->link_.ready())) {
       uint8_t buffer[128];
       ssize_t count = this->link_.read(buffer, sizeof(buffer));
@@ -135,6 +140,12 @@ void ZnpProxy::loop() {
   this->link_.flush_tx();
   if (this->protocol_.failed() || this->transport_failed_)
     this->link_.close();
+  if (this->radio_reset_requested_) {
+    // Reset outside byte parsing, with no old connection allowed to queue commands.
+    this->link_.close();
+    this->sync_link_();
+    this->radio_unresponsive_trigger_.trigger();
+  }
 }
 
 }  // namespace esphome::znp_proxy

@@ -5,6 +5,7 @@
 #include "esphome/components/socket/tcp_listener.h"
 #include "esphome/components/uart/uart.h"
 #include "esphome/core/component.h"
+#include "esphome/core/automation.h"
 #ifdef USE_BINARY_SENSOR
 #include "esphome/components/binary_sensor/binary_sensor.h"
 #endif
@@ -16,6 +17,8 @@ class ZnpProxy : public Component, public uart::UARTDevice, public Transport {
   ZnpProxy() : protocol_(*this) {}
   void set_port(uint16_t port) { this->link_.set_port(port); }
   void set_response_timeout(uint32_t ms) { this->protocol_.set_response_timeout(ms); }
+  Trigger<> *get_radio_unresponsive_trigger() { return &this->radio_unresponsive_trigger_; }
+  void set_unresponsive_detection(bool enabled) { this->protocol_.set_unresponsive_detection(enabled); }
 #ifdef USE_SOCKET_IPV4_ALLOW
   void set_allow(const socket::Ipv4AllowEntry *entries, size_t count) { this->listener_.set_allow(entries, count); }
 #endif
@@ -42,6 +45,8 @@ class ZnpProxy : public Component, public uart::UARTDevice, public Transport {
   bool link_was_up_{false};
   bool socket_pending_{false};
   bool transport_failed_{false};
+  bool radio_reset_requested_{false};
+  Trigger<> radio_unresponsive_trigger_;
 #ifdef USE_BINARY_SENSOR
   binary_sensor::BinarySensor *connected_{nullptr};
 #endif

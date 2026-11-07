@@ -29,7 +29,7 @@ struct Frame {
   void clear() { this->size = 0; }
 };
 
-enum class Event { RECOVERY_STARTED, REPLAY_STARTED, RECOVERED, LATE_RESPONSE, FAILED };
+enum class Event { RECOVERY_STARTED, REPLAY_STARTED, RECOVERED, LATE_RESPONSE, FAILED, RADIO_UNRESPONSIVE };
 
 class Transport {
  public:
@@ -43,6 +43,7 @@ class Protocol {
  public:
   explicit Protocol(Transport &transport) : transport_(transport) {}
   void set_response_timeout(uint32_t ms) { this->timeout_ms_ = ms; }
+  void set_unresponsive_detection(bool enabled) { this->detect_unresponsive_ = enabled; }
   bool paused() const { return this->state_ != State::IDLE; }
   bool failed() const { return this->state_ == State::FAILED; }
   uint8_t transaction() const { return this->saved_.bytes[19]; }
@@ -56,6 +57,7 @@ class Protocol {
     this->saved_.clear();
     this->pending_ = false;
     this->state_ = State::IDLE;
+    this->unanswered_pings_ = 0;
   }
 
   void host_data(const uint8_t *data, size_t size, uint32_t now) {
@@ -65,6 +67,13 @@ class Protocol {
       if (!this->host_.feed(data[i]))
         continue;
       const auto &b = this->host_.bytes;
+      if (this->detect_unresponsive_ && b[1] == 0 && b[2] == 0x21 && b[3] == 0x01) {
+        if (this->unanswered_pings_ == 0)
+          this->first_ping_ms_ = now;
+        if (this->unanswered_pings_ < 3)
+          this->unanswered_pings_++;
+        this->last_ping_ms_ = now;
+      }
       if (b[2] == 0x41 && b[3] == 0x00) {
         this->pending_ = false;
         this->saved_.clear();
@@ -88,6 +97,8 @@ class Protocol {
     if (!this->radio_.feed(byte))
       return;
     const auto &b = this->radio_.bytes;
+    if ((b[1] == 2 && b[2] == 0x61 && b[3] == 0x01) || (b[2] == 0x41 && b[3] == 0x80))
+      this->unanswered_pings_ = 0;
     bool internal_ping = (this->state_ == State::PING || this->state_ == State::DRAIN_PING) &&
                          b[2] == 0x61 && b[3] == 0x01;
     if (internal_ping) {
@@ -136,6 +147,14 @@ class Protocol {
   }
 
   void tick(uint32_t now) {
+    if (this->detect_unresponsive_ && this->unanswered_pings_ >= 3 &&
+        now - this->first_ping_ms_ >= 3000 && now - this->last_ping_ms_ >= 500 &&
+        (!this->reset_attempted_ || now - this->last_reset_ms_ >= 60000)) {
+      this->unanswered_pings_ = 0;
+      this->reset_attempted_ = true;
+      this->last_reset_ms_ = now;
+      this->transport_.event(Event::RADIO_UNRESPONSIVE);
+    }
     // An incomplete incoming frame must not swallow the recovery ping forever.
     if (now - this->last_radio_ms_ >= 100)
       this->radio_.clear();
@@ -183,6 +202,9 @@ class Protocol {
   uint32_t started_ms_{0};
   uint32_t last_radio_ms_{0}, last_host_ms_{0};
   uint32_t timeout_ms_{500};
+  uint32_t first_ping_ms_{0}, last_ping_ms_{0}, last_reset_ms_{0};
+  uint8_t unanswered_pings_{0};
+  bool detect_unresponsive_{false}, reset_attempted_{false};
   uint8_t command0_{0}, command1_{0};
   bool pending_{false};
   State state_{State::IDLE};

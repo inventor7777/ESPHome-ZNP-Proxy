@@ -262,8 +262,27 @@ no success is fabricated.
 
 Warnings mark recovery attempts; an INFO message marks receipt of the block’s
 synchronous response. Failure logs an ERROR and closes TCP so HA can reconnect.
-The component never resets the radio. While disconnected, UART bytes remain
+Radio resets are opt-in through `on_radio_unresponsive` (below). While disconnected, UART bytes remain
 buffered and are discarded on the next connection.
+
+### Optional automatic radio reset
+
+After at least three unanswered HA pings over three seconds, with 500 ms allowed
+for the latest reply, this trigger closes TCP and runs your reset automation.
+It fires at most once per minute, including across reconnects; idle radios do not
+trigger it. No reset occurs unless you configure the automation.
+
+```yaml
+znp_proxy:
+  # ...same settings as above...
+  on_radio_unresponsive:
+    - switch.turn_off: zBSL_gpio
+    - switch.turn_on: zRST_gpio
+    - delay: 15ms
+    - switch.turn_off: zRST_gpio
+```
+
+Reuse your board's existing reset/bootloader GPIO switches.
 
 ## Notes
 - Tested and works flawlessly on my SMLight SLZB-06p7 running my customized ESPHome firmware.

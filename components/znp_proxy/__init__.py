@@ -4,12 +4,15 @@ import esphome.final_validate as fv
 from esphome.components import socket, uart
 from esphome.const import CONF_ID, CONF_PORT, CONF_UART_ID
 
+from esphome import automation
+
 DEPENDENCIES = ["esp32", "network", "uart"]
 AUTO_LOAD = ["socket"]
 CODEOWNERS = []
 
 CONF_RESPONSE_TIMEOUT = "response_timeout"
 CONF_ZNP_PROXY_ID = "znp_proxy_id"
+CONF_ON_RADIO_UNRESPONSIVE = "on_radio_unresponsive"
 znp_proxy_ns = cg.esphome_ns.namespace("znp_proxy")
 ZnpProxy = znp_proxy_ns.class_("ZnpProxy", cg.Component, uart.UARTDevice)
 
@@ -27,6 +30,9 @@ CONFIG_SCHEMA = cv.All(
                 ),
             ),
             cv.Optional("allowed_ips"): socket.IPV4_ALLOW_SCHEMA,
+            cv.Optional(CONF_ON_RADIO_UNRESPONSIVE): automation.validate_automation(
+                single=True
+            ),
         }
     ).extend(cv.COMPONENT_SCHEMA),
     socket.consume_sockets(1, "znp_proxy", socket.SocketType.TCP),
@@ -90,3 +96,8 @@ async def to_code(config):
     socket.add_ipv4_allow(var.set_allow, config.get("allowed_ips"), config[CONF_ID])
     cg.add(var.set_port(config[CONF_PORT]))
     cg.add(var.set_response_timeout(config[CONF_RESPONSE_TIMEOUT]))
+    if on_unresponsive := config.get(CONF_ON_RADIO_UNRESPONSIVE):
+        cg.add(var.set_unresponsive_detection(True))
+        await automation.build_automation(
+            var.get_radio_unresponsive_trigger(), [], on_unresponsive
+        )

@@ -6,7 +6,7 @@ trap 'rm -rf "$test_build"' EXIT HUP INT TERM
 
 # Empty include shims let fakes.h supply the ESPHome interfaces to the real adapter.
 for header in components/socket/tcp_client_link.h components/socket/tcp_listener.h \
-  components/uart/uart.h core/component.h core/application.h core/log.h; do
+  components/uart/uart.h core/component.h core/application.h core/log.h core/automation.h; do
   mkdir -p "$test_build/include/esphome/$(dirname "$header")"
   : > "$test_build/include/esphome/$header"
 done

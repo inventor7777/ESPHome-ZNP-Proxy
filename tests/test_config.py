@@ -59,6 +59,11 @@ class ConfigurationTests(unittest.TestCase):
     def test_valid(self):
         self.check_config(BASE)
 
+    def test_unresponsive_automation(self):
+        self.check_config(
+            BASE + "  on_radio_unresponsive:\n    - delay: 15ms\n"
+        )
+
     def test_wrong_baud(self):
         self.check_config(BASE.replace("115200", "460800"), "requires baud rate 115200")
 
