@@ -1,9 +1,9 @@
 # ZNP OTA recovery proxy for ESPHome
 
-ESPHome UART-to-TCP bridge for TI ZNP radios, with recovery for stalled Zigbee OTA
-block responses. Uses native ESPHome UART/socket APIs; when coming from stock firmware or normal UART stream server Home Assistant needs no changes.
+This is a ESPHome UART-to-TCP bridge for TI ZNP radios, with recovery for stalled Zigbee OTA
+block responses, as well as basic radio timeouts. It uses native ESPHome UART/socket APIs; when coming from stock firmware or normal UART stream server you won’t need to change HA settings.
 
-Tested on SLZB-06P7. The standard SLZB-06 (CC2652P running ZNP) is expected to work
+Tested on my SLZB-06P7. The standard SLZB-06 (CC2652P running ZNP) is expected to work
 with its 115200-baud radio firmware; it uses the same UART pins (RX GPIO5, TX GPIO17).
 This recovery protocol does not support Silicon Labs radios or Thread firmware.
 
